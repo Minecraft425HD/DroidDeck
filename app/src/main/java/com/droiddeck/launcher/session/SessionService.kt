@@ -90,8 +90,7 @@ class SessionService : Service() {
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_SCREEN_OFF -> screenOn = false
-                Intent.ACTION_SCREEN_ON -> screenOn = true
+                Intent.ACTION_SCREEN_OFF, Intent.ACTION_SCREEN_ON -> screenOn = displayAwake()
                 else -> return
             }
             if (screenOn) resumeSteamSleepOnReturn()
@@ -105,7 +104,7 @@ class SessionService : Service() {
     override fun onCreate() {
         super.onCreate()
         val power = getSystemService(Context.POWER_SERVICE) as? PowerManager
-        screenOn = power?.isInteractive ?: true
+        screenOn = displayAwake()
         registerReceiver(screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
@@ -192,7 +191,7 @@ class SessionService : Service() {
         SessionState.mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_STEAM
         suspendPolicy = SessionPrefs.suspendPolicy(this, SessionState.mode)
         activityVisible = true
-        screenOn = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: true
+        screenOn = displayAwake()
         manualPauseRequested = false
         steamSleepToken = null
         suspendOperationPending = false
@@ -954,9 +953,22 @@ class SessionService : Service() {
         Log.i(TAG, "queued Steam game $gameId for the running client")
     }
 
+    /**
+     * The phone panel being off is not the session being out of sight: under Samsung DeX (or any
+     * external display) the phone is usually dark while the game is on the monitor. Count an
+     * external display that is on as awake, otherwise Resume re-freezes the session at once.
+     */
+    private fun displayAwake(): Boolean {
+        val interactive = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: true
+        if (interactive) return true
+        val displays = (getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager)?.displays
+            ?: return false
+        return displays.any { it.displayId != android.view.Display.DEFAULT_DISPLAY && it.state == android.view.Display.STATE_ON }
+    }
+
     private fun resumeSession() {
         activityVisible = true
-        screenOn = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: screenOn
+        screenOn = displayAwake()
         manualPauseRequested = false
         completeSteamSleep()
         suspendAttemptFailed = false

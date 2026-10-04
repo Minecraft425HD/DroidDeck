@@ -408,6 +408,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         defaultFocusHighlightEnabled = false
         setContent {
             DroidDeckTheme {
+            // Our own arrow only draws over the running session; over the paused screen and the
+            // drawer the system pointer must show, or a DeX mouse is invisible.
+            androidx.compose.runtime.LaunchedEffect(SessionState.suspended, drawerOpen) {
+                val icon = android.view.PointerIcon.getSystemIcon(this@SessionActivity,
+                    if (SessionState.suspended || drawerOpen) android.view.PointerIcon.TYPE_ARROW else android.view.PointerIcon.TYPE_NULL)
+                (window.decorView.findViewById<View>(android.R.id.content) as? android.view.ViewGroup)
+                    ?.getChildAt(0)?.pointerIcon = icon
+                surfaceView.pointerIcon = icon
+            }
             if (pipUi) {
                 if (SessionState.suspended) androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center,
@@ -1308,7 +1317,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         if (drawerDirectionKey != KeyEvent.KEYCODE_UNKNOWN) releaseDrawerDirection()
         if (pcKeyboardOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchGenericMotionEvent(event)
         if (padBridge?.onMotionEvent(event) == true) return true
-        if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE) && !drawerOpen && onMouse(event)) return true
+        if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE) && !drawerOpen && !SessionState.suspended && onMouse(event)) return true
         return super.dispatchGenericMotionEvent(event)
     }
 
