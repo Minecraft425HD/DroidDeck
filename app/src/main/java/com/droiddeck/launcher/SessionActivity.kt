@@ -1210,6 +1210,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 return super.dispatchKeyEvent(event)
         }
         if (pipUi) return true
+        // Ctrl+Alt+Esc is the way to the session menu (and its Stop) from a keyboard: under DeX
+        // there is no Back key, and every other key goes to the guest.
+        if (event.keyCode == KeyEvent.KEYCODE_ESCAPE && event.isCtrlPressed && event.isAltPressed) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) drawerOpen = !drawerOpen
+            return true
+        }
         val fromController = event.device != null && PadBridge.isFromController(event.device)
         if (fromController && event.action == KeyEvent.ACTION_DOWN) {
             if (drawerOpen && !drawerControllerActive) sessionOverlay.requestFocus()
@@ -1652,7 +1658,11 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         when (event.actionMasked) {
             MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_HOVER_ENTER ->
                 movePointer(event.x, event.y)
-            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
+            // A mouse's side buttons are Back and Forward, not clicks: left unhandled, Android turns
+            // Back into the key that opens the session menu.
+            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE ->
+                if (event.actionButton == MotionEvent.BUTTON_BACK || event.actionButton == MotionEvent.BUTTON_FORWARD) return false
+                else {
                 movePointer(event.x, event.y)
                 val button = when (event.actionButton) {
                     MotionEvent.BUTTON_SECONDARY -> PointerGestures.BTN_RIGHT
