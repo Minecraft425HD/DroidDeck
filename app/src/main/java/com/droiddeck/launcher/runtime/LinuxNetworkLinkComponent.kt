@@ -321,14 +321,14 @@ class LinuxNetworkLinkComponent(
     /**
      * The addresses a guest should see, as (text, prefix). A carrier that is IPv6-only gives the
      * phone its IPv4 through 464XLAT: a stacked link, with a 192.0.0.x address, that
-     * [LinkProperties.getLinkAddresses] leaves out. Left unlisted, the guest sees no IPv4 at all,
+     * [LinkProperties.getLinkAddresses] leaves out (the call that lists it is not public API). Left unlisted, the guest sees no IPv4 at all,
      * glibc's AI_ADDRCONFIG then drops every A record, and Steam's IPv4-only servers are
      * unreachable on mobile data while Wi-Fi works. The kernel does translate a guest's IPv4
      * sockets, so when the link has IPv6 but no IPv4 one is added (192.0.0.4, the CLAT address).
      */
     private fun addressesOf(properties: LinkProperties?): List<Pair<String, Int>> {
         if (properties == null) return emptyList()
-        val all = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) properties.allLinkAddresses else properties.linkAddresses
+        val all = properties.linkAddresses
         val out = all.filter { it.address is Inet4Address || it.address is Inet6Address }
             .mapNotNull { a -> a.address.hostAddress?.substringBefore('%')?.let { it to a.prefixLength } }
             .toMutableList()
