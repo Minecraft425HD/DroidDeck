@@ -214,8 +214,8 @@ class LinuxNetworkLinkComponent(
                 }
             })
             put("addresses", JSONArray().apply {
-                properties?.linkAddresses.orEmpty().forEach {
-                    put(JSONObject().put("address", it.address.hostAddress?.substringBefore('%')).put("prefix", it.prefixLength))
+                addressesOf(properties).forEach {
+                    put(JSONObject().put("address", it.first).put("prefix", it.second))
                 }
             })
             put("gateways", JSONArray().apply {
@@ -298,8 +298,7 @@ class LinuxNetworkLinkComponent(
     }
 
     private fun describe(properties: LinkProperties?): String {
-        val addresses = properties?.linkAddresses.orEmpty()
-            .filter { it.address is Inet4Address || it.address is Inet6Address }
+        val addresses = addressesOf(properties)
         val name = properties?.interfaceName?.takeIf { addresses.isNotEmpty() } ?: OFFLINE_NAME
         val mtu = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) properties?.mtu ?: 0 else 0
         return buildString {
@@ -309,9 +308,7 @@ class LinuxNetworkLinkComponent(
                 append("addr $OFFLINE_ADDRESS\n")
                 return@buildString
             }
-            for (address in addresses) {
-                append("addr ${address.address.hostAddress?.substringBefore('%')} ${address.prefixLength}\n")
-            }
+            for ((address, prefix) in addresses) append("addr $address $prefix\n")
             for (family in listOf(Inet4Address::class.java, Inet6Address::class.java)) {
                 val gateway = properties?.routes.orEmpty()
                     .firstOrNull { it.isDefaultRoute && family.isInstance(it.gateway) && !it.gateway!!.isAnyLocalAddress }
@@ -319,6 +316,26 @@ class LinuxNetworkLinkComponent(
                 append("gw ${gateway.hostAddress?.substringBefore('%')}\n")
             }
         }
+    }
+
+    /**
+     * The addresses a guest should see, as (text, prefix). A carrier that is IPv6-only gives the
+     * phone its IPv4 through 464XLAT: a stacked link, with a 192.0.0.x address, that
+     * [LinkProperties.getLinkAddresses] leaves out. Left unlisted, the guest sees no IPv4 at all,
+     * glibc's AI_ADDRCONFIG then drops every A record, and Steam's IPv4-only servers are
+     * unreachable on mobile data while Wi-Fi works. The kernel does translate a guest's IPv4
+     * sockets, so when the link has IPv6 but no IPv4 one is added (192.0.0.4, the CLAT address).
+     */
+    private fun addressesOf(properties: LinkProperties?): List<Pair<String, Int>> {
+        if (properties == null) return emptyList()
+        val all = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) properties.allLinkAddresses else properties.linkAddresses
+        val out = all.filter { it.address is Inet4Address || it.address is Inet6Address }
+            .mapNotNull { a -> a.address.hostAddress?.substringBefore('%')?.let { it to a.prefixLength } }
+            .toMutableList()
+        val hasV4 = all.any { it.address is Inet4Address }
+        val hasGlobalV6 = all.any { val a = it.address; a is Inet6Address && !a.isLinkLocalAddress && !a.isLoopbackAddress }
+        if (!hasV4 && hasGlobalV6) out.add(CLAT_ADDRESS to CLAT_PREFIX)
+        return out
     }
 
     /**
@@ -340,6 +357,8 @@ class LinuxNetworkLinkComponent(
         private const val DEFAULT_MTU = 1500
         private const val OFFLINE_NAME = "eth0"
         private const val OFFLINE_ADDRESS = "10.0.0.2 24"
+        private const val CLAT_ADDRESS = "192.0.0.4"
+        private const val CLAT_PREFIX = 29
         private const val SCAN_INTERVAL_MS = 30_000L
     }
 }
