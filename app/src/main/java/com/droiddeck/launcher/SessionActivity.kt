@@ -408,6 +408,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         defaultFocusHighlightEnabled = false
         setContent {
             DroidDeckTheme {
+            // Our own arrow only draws over the running session; over the paused screen and the
+            // drawer the system pointer must show, or a DeX mouse is invisible.
+            androidx.compose.runtime.LaunchedEffect(SessionState.suspended, drawerOpen) {
+                val icon = android.view.PointerIcon.getSystemIcon(this@SessionActivity,
+                    if (SessionState.suspended || drawerOpen) android.view.PointerIcon.TYPE_ARROW else android.view.PointerIcon.TYPE_NULL)
+                (window.decorView.findViewById<View>(android.R.id.content) as? android.view.ViewGroup)
+                    ?.getChildAt(0)?.pointerIcon = icon
+                surfaceView.pointerIcon = icon
+            }
             if (pipUi) {
                 if (SessionState.suspended) androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center,
@@ -1201,6 +1210,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 return super.dispatchKeyEvent(event)
         }
         if (pipUi) return true
+        // Ctrl+Alt+Esc is the way to the session menu (and its Stop) from a keyboard: under DeX
+        // there is no Back key, and every other key goes to the guest.
+        if (event.keyCode == KeyEvent.KEYCODE_ESCAPE && event.isCtrlPressed && event.isAltPressed) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) drawerOpen = !drawerOpen
+            return true
+        }
         val fromController = event.device != null && PadBridge.isFromController(event.device)
         if (fromController && event.action == KeyEvent.ACTION_DOWN) {
             if (drawerOpen && !drawerControllerActive) sessionOverlay.requestFocus()
@@ -1308,7 +1323,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         if (drawerDirectionKey != KeyEvent.KEYCODE_UNKNOWN) releaseDrawerDirection()
         if (pcKeyboardOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchGenericMotionEvent(event)
         if (padBridge?.onMotionEvent(event) == true) return true
-        if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE) && !drawerOpen && onMouse(event)) return true
+        if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE) && !drawerOpen && !SessionState.suspended && onMouse(event)) return true
         return super.dispatchGenericMotionEvent(event)
     }
 
@@ -1643,7 +1658,11 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         when (event.actionMasked) {
             MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_HOVER_ENTER ->
                 movePointer(event.x, event.y)
-            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
+            // A mouse's side buttons are Back and Forward, not clicks: left unhandled, Android turns
+            // Back into the key that opens the session menu.
+            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE ->
+                if (event.actionButton == MotionEvent.BUTTON_BACK || event.actionButton == MotionEvent.BUTTON_FORWARD) return false
+                else {
                 movePointer(event.x, event.y)
                 val button = when (event.actionButton) {
                     MotionEvent.BUTTON_SECONDARY -> PointerGestures.BTN_RIGHT

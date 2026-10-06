@@ -16,6 +16,7 @@
     <keybind key="A-F4"><action name="Close"/></keybind>
     <keybind key="W-Return"><action name="Execute"><command>qterminal</command></action></keybind>
     <keybind key="W-e"><action name="Execute"><command>pcmanfm-qt</command></action></keybind>
+    <keybind key="C-A-BackSpace"><action name="Exit"/></keybind>
     <keybind key="W-d"><action name="ToggleMaximize"/></keybind>
   </keyboard>
   <mouse><doubleClickTime>500</doubleClickTime></mouse>
